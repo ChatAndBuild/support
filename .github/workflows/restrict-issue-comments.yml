@@ -1,4 +1,5 @@
-name: Restrict Issue Comments - Simple
+# .github/workflows/restrict-issue-comments-alt.yml
+name: Restrict Issue Comments - Alternative
 
 on:
   issue_comment:
@@ -6,54 +7,43 @@ on:
 
 permissions:
   issues: write
-  pull-requests: write
+  members: read
 
 jobs:
-  simple-restriction:
+  moderate-comments:
     runs-on: ubuntu-latest
     steps:
-      - name: Restrict non-member comments
-        uses: actions/github-script@v6
-        with:
-          script: |
-            const { issue, comment, sender } = context.payload;
-            
-            // Always allow issue creator
-            if (issue.user.login === sender.login) {
-              return;
-            }
-            
-            // Try to check org membership - if this fails, assume not a member
-            let isOrgMember = false;
-            try {
-              await github.rest.orgs.checkMembershipForUser({
-                org: 'ChatAndBuild',
-                username: sender.login
-              });
-              isOrgMember = true;
-            } catch (error) {
-              isOrgMember = false;
-            }
-            
-            if (!isOrgMember) {
-              // Delete comment and lock issue
-              await github.rest.issues.deleteComment({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                comment_id: comment.id
-              });
-              
-              await github.rest.issues.lock({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                issue_number: issue.number
-              });
-              
-              // Add explanation
-              await github.rest.issues.createComment({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                issue_number: issue.number,
-                body: '🔒 This issue is now locked. Only organization members and the issue creator may comment.'
-              });
-            }
+      - name: Check permissions and moderate
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # Get issue and comment details
+          ISSUE_NUMBER=${{ github.event.issue.number }}
+          COMMENT_ID=${{ github.event.comment.id }}
+          COMMENT_USER="${{ github.event.comment.user.login }}"
+          ISSUE_CREATOR="${{ github.event.issue.user.login }}"
+          ORG_NAME="ChatAndBuild"
+          
+          # Check if commenter is issue creator
+          if [ "$COMMENT_USER" = "$ISSUE_CREATOR" ]; then
+            echo "✅ Allowing comment from issue creator: $COMMENT_USER"
+            exit 0
+          fi
+          
+          # Check if commenter is organization member
+          if gh api orgs/$ORG_NAME/members/$COMMENT_USER > /dev/null 2>&1; then
+            echo "✅ Allowing comment from org member: $COMMENT_USER"
+            exit 0
+          fi
+          
+          echo "🚫 Restricting comment from: $COMMENT_USER"
+          
+          # Delete comment
+          gh api -X DELETE /repos/${{ github.repository }}/issues/comments/$COMMENT_ID
+          
+          # Lock issue
+          gh api -X PUT /repos/${{ github.repository }}/issues/$ISSUE_NUMBER/lock
+          
+          # Add warning
+          gh api -X POST /repos/${{ github.repository }}/issues/$ISSUE_NUMBER/comments \
+            -f body="⚠️ **Comment Restricted**\n\nOnly @$ORG_NAME organization members and the issue creator (@$ISSUE_CREATOR) can comment on this issue."
