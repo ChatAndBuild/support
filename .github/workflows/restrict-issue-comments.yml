@@ -1,70 +1,59 @@
-name: Restrict Issue Comments
+name: Restrict Issue Comments - Simple
 
 on:
   issue_comment:
     types: [created]
 
+permissions:
+  issues: write
+  pull-requests: write
+
 jobs:
-  restrict-comments:
+  simple-restriction:
     runs-on: ubuntu-latest
     steps:
-      - name: Check and restrict comments
+      - name: Restrict non-member comments
         uses: actions/github-script@v6
         with:
-          github-token: ${{ secrets.PAT_TOKEN }}
           script: |
             const { issue, comment, sender } = context.payload;
-            const orgName = 'ChatAndBuild';
             
-            // Skip if no comment (shouldn't happen with this trigger)
-            if (!comment) return;
+            // Always allow issue creator
+            if (issue.user.login === sender.login) {
+              return;
+            }
             
-            // Allow organization members
+            // Try to check org membership - if this fails, assume not a member
+            let isOrgMember = false;
             try {
               await github.rest.orgs.checkMembershipForUser({
-                org: orgName,
+                org: 'ChatAndBuild',
                 username: sender.login
               });
-              console.log(`✅ Allowing comment from organization member: ${sender.login}`);
-              return;
+              isOrgMember = true;
             } catch (error) {
-              console.log(`❌ ${sender.login} is not an organization member`);
+              isOrgMember = false;
             }
             
-            // Allow issue creator
-            if (issue.user.login === sender.login) {
-              console.log(`✅ Allowing comment from issue creator: ${sender.login}`);
-              return;
-            }
-            
-            // Restrict unauthorized user
-            console.log(`🚫 Restricting comment from unauthorized user: ${sender.login}`);
-            
-            try {
-              // Delete the comment
+            if (!isOrgMember) {
+              // Delete comment and lock issue
               await github.rest.issues.deleteComment({
                 owner: context.repo.owner,
                 repo: context.repo.repo,
                 comment_id: comment.id
               });
-              console.log(`✅ Deleted comment from ${sender.login}`);
               
-              // Lock the issue
               await github.rest.issues.lock({
                 owner: context.repo.owner,
                 repo: context.repo.repo,
                 issue_number: issue.number
               });
-              console.log(`✅ Locked issue #${issue.number}`);
               
-              // Add warning comment
+              // Add explanation
               await github.rest.issues.createComment({
                 owner: context.repo.owner,
                 repo: context.repo.repo,
                 issue_number: issue.number,
-                body: `⚠️ **Comment Restricted**\n\n@${sender.login}, only organization members (@${orgName}) and the issue creator (@${issue.user.login}) can comment on this issue. Your comment has been removed and the issue has been locked.`
+                body: '🔒 This issue is now locked. Only organization members and the issue creator may comment.'
               });
-              
-            } catch (error) {
-              console.error('Error restricting comment:', error);
             }
