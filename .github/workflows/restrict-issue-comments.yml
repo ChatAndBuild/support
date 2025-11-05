@@ -21,7 +21,8 @@ jobs:
           COMMENT_ID=${{ github.event.comment.id }}
           COMMENT_USER="${{ github.event.comment.user.login }}"
           ISSUE_CREATOR="${{ github.event.issue.user.login }}"
-          ORG_NAME="ChatAndBuild"
+          ORG_NAME_1="ChatAndBuild"
+          ORG_NAME_2="Pivotal-Research"
           REPO="${{ github.repository }}"
           
           echo "Processing comment by $COMMENT_USER on issue #$ISSUE_NUMBER"
@@ -33,7 +34,13 @@ jobs:
           fi
           
           # Check if commenter is organization member
-          if gh api "orgs/$ORG_NAME/members/$COMMENT_USER" > /dev/null 2>&1; then
+          if gh api "orgs/$ORG_NAME_1/members/$COMMENT_USER"; then
+            echo "✅ Allowing comment from org member: $COMMENT_USER"
+            exit 0
+          fi
+
+          # Check if commenter is organization member
+          if gh api "orgs/$ORG_NAME_2/members/$COMMENT_USER"; then
             echo "✅ Allowing comment from org member: $COMMENT_USER"
             exit 0
           fi
