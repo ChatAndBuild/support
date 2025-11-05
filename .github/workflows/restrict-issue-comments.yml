@@ -7,7 +7,7 @@ on:
 
 permissions:
   issues: write
-  members: read
+  contents: write
 
 jobs:
   moderate-comments:
