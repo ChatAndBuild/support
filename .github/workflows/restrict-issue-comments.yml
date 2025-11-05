@@ -1,0 +1,52 @@
+# .github/workflows/restrict-issue-comments.yml
+name: Restrict Issue Comments
+
+on:
+  issues:
+    types: [opened]
+  issue_comment:
+    types: [created]
+
+jobs:
+  restrict-comments:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check if comment should be restricted
+        uses: actions/github-script@v6
+        with:
+          script: |
+            const issue = context.payload.issue;
+            const comment = context.payload.comment;
+            const actor = context.payload.sender.login;
+            
+            // Allow organization members
+            const isOrgMember = await github.rest.orgs.checkMembershipForUser({
+              org: 'ChatAndBuild',
+              username: actor
+            }).then(() => true).catch(() => false);
+            
+            // Allow issue creator
+            const isIssueCreator = issue.user.login === actor;
+            
+            if (!isOrgMember && !isIssueCreator) {
+              // Delete the comment and lock the issue
+              await github.rest.issues.deleteComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: comment.id
+              });
+              
+              await github.rest.issues.lock({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: issue.number
+              });
+              
+              // Create a warning comment
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: issue.number,
+                body: '⚠️ This issue is restricted to organization members and the original issue creator only. Your comment has been removed.'
+              });
+            }
