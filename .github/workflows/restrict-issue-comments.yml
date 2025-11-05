@@ -1,5 +1,4 @@
-# .github/workflows/restrict-issue-comments-alt.yml
-name: Restrict Issue Comments - Alternative
+name: Restrict Issue Comments
 
 on:
   issue_comment:
@@ -7,7 +6,7 @@ on:
 
 permissions:
   issues: write
-  contents: write
+  members: read
 
 jobs:
   moderate-comments:
@@ -23,6 +22,9 @@ jobs:
           COMMENT_USER="${{ github.event.comment.user.login }}"
           ISSUE_CREATOR="${{ github.event.issue.user.login }}"
           ORG_NAME="ChatAndBuild"
+          REPO="${{ github.repository }}"
+          
+          echo "Processing comment by $COMMENT_USER on issue #$ISSUE_NUMBER"
           
           # Check if commenter is issue creator
           if [ "$COMMENT_USER" = "$ISSUE_CREATOR" ]; then
@@ -31,19 +33,19 @@ jobs:
           fi
           
           # Check if commenter is organization member
-          if gh api orgs/$ORG_NAME/members/$COMMENT_USER > /dev/null 2>&1; then
+          if gh api "orgs/$ORG_NAME/members/$COMMENT_USER" > /dev/null 2>&1; then
             echo "✅ Allowing comment from org member: $COMMENT_USER"
             exit 0
           fi
           
-          echo "🚫 Restricting comment from: $COMMENT_USER"
+          echo "🚫 Restricting comment from unauthorized user: $COMMENT_USER"
           
-          # Delete comment
-          gh api -X DELETE /repos/${{ github.repository }}/issues/comments/$COMMENT_ID
+          # Delete the unauthorized comment
+          gh api -X DELETE "/repos/$REPO/issues/comments/$COMMENT_ID"
+          echo "✅ Deleted comment from $COMMENT_USER"
           
-          # Lock issue
-          gh api -X PUT /repos/${{ github.repository }}/issues/$ISSUE_NUMBER/lock
+          # Add warning comment (this will be allowed since it's from the workflow)
+          gh api -X POST "/repos/$REPO/issues/$ISSUE_NUMBER/comments" \
+            -f body="⚠️ **Comment Removed**\n\n@$COMMENT_USER, only @$ORG_NAME organization members and the issue creator (@$ISSUE_CREATOR) can comment on this issue.\n\nYour comment has been removed but the discussion remains open for authorized participants."
           
-          # Add warning
-          gh api -X POST /repos/${{ github.repository }}/issues/$ISSUE_NUMBER/comments \
-            -f body="⚠️ **Comment Restricted**\n\nOnly @$ORG_NAME organization members and the issue creator (@$ISSUE_CREATOR) can comment on this issue."
+          echo "✅ Added warning comment"
