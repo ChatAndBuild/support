@@ -43,9 +43,3 @@ jobs:
           # Delete the unauthorized comment
           gh api -X DELETE "/repos/$REPO/issues/comments/$COMMENT_ID"
           echo "✅ Deleted comment from $COMMENT_USER"
-          
-          # Add warning comment (this will be allowed since it's from the workflow)
-          gh api -X POST "/repos/$REPO/issues/$ISSUE_NUMBER/comments" \
-            -f body="⚠️ **Comment Removed**\n\n@$COMMENT_USER, only @$ORG_NAME organization members and the issue creator (@$ISSUE_CREATOR) can comment on this issue.\n\nYour comment has been removed but the discussion remains open for authorized participants."
-          
-          echo "✅ Added warning comment"
