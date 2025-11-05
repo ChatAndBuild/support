@@ -1,9 +1,6 @@
-# .github/workflows/restrict-issue-comments.yml
 name: Restrict Issue Comments
 
 on:
-  issues:
-    types: [opened]
   issue_comment:
     types: [created]
 
@@ -11,42 +8,63 @@ jobs:
   restrict-comments:
     runs-on: ubuntu-latest
     steps:
-      - name: Check if comment should be restricted
+      - name: Check and restrict comments
         uses: actions/github-script@v6
         with:
+          github-token: ${{ secrets.PAT_TOKEN }}
           script: |
-            const issue = context.payload.issue;
-            const comment = context.payload.comment;
-            const actor = context.payload.sender.login;
+            const { issue, comment, sender } = context.payload;
+            const orgName = 'ChatAndBuild';
+            
+            // Skip if no comment (shouldn't happen with this trigger)
+            if (!comment) return;
             
             // Allow organization members
-            const isOrgMember = await github.rest.orgs.checkMembershipForUser({
-              org: 'ChatAndBuild',
-              username: actor
-            }).then(() => true).catch(() => false);
+            try {
+              await github.rest.orgs.checkMembershipForUser({
+                org: orgName,
+                username: sender.login
+              });
+              console.log(`✅ Allowing comment from organization member: ${sender.login}`);
+              return;
+            } catch (error) {
+              console.log(`❌ ${sender.login} is not an organization member`);
+            }
             
             // Allow issue creator
-            const isIssueCreator = issue.user.login === actor;
+            if (issue.user.login === sender.login) {
+              console.log(`✅ Allowing comment from issue creator: ${sender.login}`);
+              return;
+            }
             
-            if (!isOrgMember && !isIssueCreator) {
-              // Delete the comment and lock the issue
+            // Restrict unauthorized user
+            console.log(`🚫 Restricting comment from unauthorized user: ${sender.login}`);
+            
+            try {
+              // Delete the comment
               await github.rest.issues.deleteComment({
                 owner: context.repo.owner,
                 repo: context.repo.repo,
                 comment_id: comment.id
               });
+              console.log(`✅ Deleted comment from ${sender.login}`);
               
+              // Lock the issue
               await github.rest.issues.lock({
                 owner: context.repo.owner,
                 repo: context.repo.repo,
                 issue_number: issue.number
               });
+              console.log(`✅ Locked issue #${issue.number}`);
               
-              // Create a warning comment
+              // Add warning comment
               await github.rest.issues.createComment({
                 owner: context.repo.owner,
                 repo: context.repo.repo,
                 issue_number: issue.number,
-                body: '⚠️ This issue is restricted to organization members and the original issue creator only. Your comment has been removed.'
+                body: `⚠️ **Comment Restricted**\n\n@${sender.login}, only organization members (@${orgName}) and the issue creator (@${issue.user.login}) can comment on this issue. Your comment has been removed and the issue has been locked.`
               });
+              
+            } catch (error) {
+              console.error('Error restricting comment:', error);
             }
